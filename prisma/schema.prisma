@@ -1,0 +1,153 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum KpiStatus {
+  OK
+  VIG
+  CRIT
+}
+
+model ModelVersion {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  label       String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  domains     Domain[]
+  kpis        Kpi[]
+  segments    Segment[]
+  zones       Zone[]
+  triggers    TriggerRule[]
+}
+
+model Domain {
+  id            String   @id @default(cuid())
+  modelVersionId String
+  code          String
+  label         String
+  weight        Float
+  createdAt     DateTime @default(now())
+
+  modelVersion  ModelVersion @relation(fields: [modelVersionId], references: [id])
+  kpis          Kpi[]
+
+  @@unique([modelVersionId, code])
+}
+
+model Segment {
+  id            String   @id @default(cuid())
+  modelVersionId String
+  code          String
+  label         String
+  alpha         Float   @default(0) // αSeg
+  createdAt     DateTime @default(now())
+
+  modelVersion  ModelVersion @relation(fields: [modelVersionId], references: [id])
+
+  @@unique([modelVersionId, code])
+}
+
+model Zone {
+  id            String   @id @default(cuid())
+  modelVersionId String
+  code          String
+  label         String
+  beta          Float   @default(0) // βZone
+  createdAt     DateTime @default(now())
+
+  modelVersion  ModelVersion @relation(fields: [modelVersionId], references: [id])
+
+  @@unique([modelVersionId, code])
+}
+
+model Kpi {
+  id            String   @id @default(cuid())
+  modelVersionId String
+  domainId      String
+  code          String
+  label         String
+  unit          String?
+  weight        Float     @default(1)
+  direction     String    @default("higher_is_better") // or lower_is_better / boolean
+  sourceHint    String?
+  createdAt     DateTime  @default(now())
+
+  modelVersion  ModelVersion @relation(fields: [modelVersionId], references: [id])
+  domain        Domain       @relation(fields: [domainId], references: [id])
+  thresholds    KpiThreshold[]
+
+  @@unique([modelVersionId, code])
+}
+
+model KpiThreshold {
+  id        String   @id @default(cuid())
+  kpiId     String
+  status    KpiStatus
+  // generic numeric thresholds: for "higher_is_better":
+  // OK: minValue ; VIG: minValue ; CRIT: minValue (optional)
+  minValue  Float?
+  maxValue  Float?
+  // optional rule override by segment/zone
+  segmentCode String?
+  zoneCode    String?
+  createdAt DateTime @default(now())
+
+  kpi      Kpi @relation(fields: [kpiId], references: [id])
+
+  @@index([kpiId, status])
+}
+
+model TriggerRule {
+  id            String   @id @default(cuid())
+  modelVersionId String
+  code          String
+  label         String
+  malus         Float
+  // if set, becomes "hard trigger" -> classification Souffrance
+  isHardTrigger Boolean @default(false)
+  createdAt     DateTime @default(now())
+
+  modelVersion  ModelVersion @relation(fields: [modelVersionId], references: [id])
+
+  @@unique([modelVersionId, code])
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  projectRef  String   @unique
+  name        String
+  city        String
+  zoneCode    String
+  segmentCode String
+  promoterType String // for typology modulator
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  evaluations Evaluation[]
+}
+
+model Evaluation {
+  id            String   @id @default(cuid())
+  projectId     String
+  modelVersionId String
+  dateScoring   DateTime @default(now())
+  status        String   @default("DRAFT") // DRAFT/SUBMITTED/APPROVED
+  // raw input data
+  inputs        Json
+  // computed output
+  results       Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  project       Project @relation(fields: [projectId], references: [id])
+  modelVersion  ModelVersion @relation(fields: [modelVersionId], references: [id])
+
+  @@index([projectId, dateScoring])
+}
