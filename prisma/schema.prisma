@@ -14,17 +14,14 @@ enum KpiStatus {
 }
 
 model ModelVersion {
-  id          String   @id @default(cuid())
-  code        String   @unique
-  label       String
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  id          String       @id @default(uuid())
+  code        String       @unique
+  label       String?
+  createdAt   DateTime     @default(now())
 
-  domains     Domain[]
-  kpis        Kpi[]
-  segments    Segment[]
-  zones       Zone[]
-  triggers    TriggerRule[]
+  evaluations Evaluation[]   // 👈 RELATION INVERSE
+
+  @@map("pi_model_versions")
 }
 
 model Domain {
