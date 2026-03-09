@@ -7,138 +7,155 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum KpiStatus {
-  OK
-  VIG
-  CRIT
+model Project {
+  id              String       @id @default(uuid()) @db.Uuid
+  projectCode     String?      @unique @map("project_code")
+  name            String
+  city            String?
+  zone            String?
+  segment         String?
+  type            String?
+  currency        String?      @default("MAD")
+  totalCost       Decimal?     @map("total_cost") @db.Decimal(18, 2)
+  financingAmount Decimal?     @map("financing_amount") @db.Decimal(18, 2)
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  evaluations     Evaluation[]
+
+  @@map("pi_projects")
 }
 
 model ModelVersion {
-  id          String       @id @default(uuid())
-  code        String       @unique
-  label       String?
-  createdAt   DateTime     @default(now())
+  id            String            @id @default(uuid()) @db.Uuid
+  code          String            @unique
+  label         String?
+  isActive      Boolean           @default(true) @map("is_active")
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  evaluations Evaluation[]   // 👈 RELATION INVERSE
+  domainWeights DomainWeight[]
+  kpis          Kpi[]
+  thresholds    KpiThreshold[]
+  segmentAdjustments SegmentAdjustment[]
+  zoneAdjustments    ZoneAdjustment[]
+  d5Triggers         D5Trigger[]
+  evaluations        Evaluation[]
 
   @@map("pi_model_versions")
 }
 
-model Domain {
-  id            String   @id @default(cuid())
-  modelVersionId String
-  code          String
-  label         String
-  weight        Float
-  createdAt     DateTime @default(now())
+model DomainWeight {
+  id         String       @id @default(uuid()) @db.Uuid
+  modelCode  String       @map("model_code")
+  domainCode String       @map("domain_code")
+  weight     Decimal      @db.Decimal(10, 4)
 
-  modelVersion  ModelVersion @relation(fields: [modelVersionId], references: [id])
-  kpis          Kpi[]
+  modelVersion ModelVersion @relation(fields: [modelCode], references: [code], onDelete: Cascade)
 
-  @@unique([modelVersionId, code])
-}
-
-model Segment {
-  id            String   @id @default(cuid())
-  modelVersionId String
-  code          String
-  label         String
-  alpha         Float   @default(0) // αSeg
-  createdAt     DateTime @default(now())
-
-  modelVersion  ModelVersion @relation(fields: [modelVersionId], references: [id])
-
-  @@unique([modelVersionId, code])
-}
-
-model Zone {
-  id            String   @id @default(cuid())
-  modelVersionId String
-  code          String
-  label         String
-  beta          Float   @default(0) // βZone
-  createdAt     DateTime @default(now())
-
-  modelVersion  ModelVersion @relation(fields: [modelVersionId], references: [id])
-
-  @@unique([modelVersionId, code])
+  @@unique([modelCode, domainCode])
+  @@map("pi_domain_weights")
 }
 
 model Kpi {
-  id            String   @id @default(cuid())
-  modelVersionId String
-  domainId      String
-  code          String
-  label         String
-  unit          String?
-  weight        Float     @default(1)
-  direction     String    @default("higher_is_better") // or lower_is_better / boolean
-  sourceHint    String?
-  createdAt     DateTime  @default(now())
+  id         String       @id @default(uuid()) @db.Uuid
+  modelCode  String       @map("model_code")
+  domainCode String       @map("domain_code")
+  kpiCode    String       @map("kpi_code")
+  label      String
+  unit       String?
+  valueType  String       @default("number") @map("value_type")
+  direction  String       @default("higher_is_better")
+  weight     Decimal      @default(1.0) @db.Decimal(10, 4)
+  isActive   Boolean      @default(true) @map("is_active")
 
-  modelVersion  ModelVersion @relation(fields: [modelVersionId], references: [id])
-  domain        Domain       @relation(fields: [domainId], references: [id])
-  thresholds    KpiThreshold[]
+  modelVersion ModelVersion  @relation(fields: [modelCode], references: [code], onDelete: Cascade)
 
-  @@unique([modelVersionId, code])
+  @@unique([modelCode, kpiCode])
+  @@map("pi_kpis")
 }
 
 model KpiThreshold {
-  id        String   @id @default(cuid())
-  kpiId     String
-  status    KpiStatus
-  // generic numeric thresholds: for "higher_is_better":
-  // OK: minValue ; VIG: minValue ; CRIT: minValue (optional)
-  minValue  Float?
-  maxValue  Float?
-  // optional rule override by segment/zone
-  segmentCode String?
-  zoneCode    String?
-  createdAt DateTime @default(now())
+  id         String       @id @default(uuid()) @db.Uuid
+  modelCode  String       @map("model_code")
+  kpiCode    String       @map("kpi_code")
+  segment    String?
+  zone       String?
+  bandMin    Decimal?     @map("band_min") @db.Decimal(18, 4)
+  bandMax    Decimal?     @map("band_max") @db.Decimal(18, 4)
+  score      Decimal      @db.Decimal(10, 4)
 
-  kpi      Kpi @relation(fields: [kpiId], references: [id])
+  modelVersion ModelVersion @relation(fields: [modelCode], references: [code], onDelete: Cascade)
 
-  @@index([kpiId, status])
+  @@map("pi_kpi_thresholds")
 }
 
-model TriggerRule {
-  id            String   @id @default(cuid())
-  modelVersionId String
-  code          String
-  label         String
-  malus         Float
-  // if set, becomes "hard trigger" -> classification Souffrance
-  isHardTrigger Boolean @default(false)
-  createdAt     DateTime @default(now())
+model SegmentAdjustment {
+  id         String       @id @default(uuid()) @db.Uuid
+  modelCode  String       @map("model_code")
+  segment    String
+  alpha      Decimal      @db.Decimal(10, 4)
 
-  modelVersion  ModelVersion @relation(fields: [modelVersionId], references: [id])
+  modelVersion ModelVersion @relation(fields: [modelCode], references: [code], onDelete: Cascade)
 
-  @@unique([modelVersionId, code])
+  @@unique([modelCode, segment])
+  @@map("pi_segment_adjustments")
 }
 
-model Project {
-  id          String   @id @default(cuid())
-  projectRef  String   @unique
-  name        String
-  city        String
-  zoneCode    String
-  segmentCode String
-  promoterType String // for typology modulator
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+model ZoneAdjustment {
+  id         String       @id @default(uuid()) @db.Uuid
+  modelCode  String       @map("model_code")
+  zone       String
+  beta       Decimal      @db.Decimal(10, 4)
 
-  evaluations Evaluation[]
+  modelVersion ModelVersion @relation(fields: [modelCode], references: [code], onDelete: Cascade)
+
+  @@unique([modelCode, zone])
+  @@map("pi_zone_adjustments")
+}
+
+model D5Trigger {
+  id          String       @id @default(uuid()) @db.Uuid
+  modelCode   String       @map("model_code")
+  triggerCode String       @map("trigger_code")
+  label       String
+  severity    String
+  malus       Decimal      @default(0) @db.Decimal(10, 4)
+
+  modelVersion ModelVersion @relation(fields: [modelCode], references: [code], onDelete: Cascade)
+
+  @@unique([modelCode, triggerCode])
+  @@map("pi_d5_triggers")
 }
 
 model Evaluation {
-  id              String   @id @default(uuid())
-  projectId       String
-  modelVersionId  String
+  id             String       @id @default(uuid()) @db.Uuid
+  projectId      String       @map("project_id") @db.Uuid
+  modelCode      String       @map("model_code")
+  status         String       @default("draft")
+  inputs         Json         @default("{}")
+  results        Json         @default("{}")
+  finalScore     Decimal?     @map("final_score") @db.Decimal(10, 4)
+  grade          String?
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  project         Project      @relation(fields: [projectId], references: [id])
-  modelVersion    ModelVersion @relation(fields: [modelVersionId], references: [id])
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  modelVersion   ModelVersion @relation(fields: [modelCode], references: [code], onDelete: Restrict)
 
-  createdAt       DateTime @default(now())
-
+  @@index([projectId], map: "idx_pi_eval_project")
+  @@index([modelCode], map: "idx_pi_eval_model")
   @@map("pi_evaluations")
+}
+
+model AuditLog {
+  id         String    @id @default(uuid()) @db.Uuid
+  entityType String    @map("entity_type")
+  entityId   String    @map("entity_id") @db.Uuid
+  action     String
+  actor      String?
+  oldValue   Json?     @map("old_value")
+  newValue   Json?     @map("new_value")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("pi_audit_log")
 }
