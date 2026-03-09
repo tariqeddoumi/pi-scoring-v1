@@ -1,9 +1,5 @@
 {
   "compilerOptions": {
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["src/*"]
-    }
     "target": "ES2022",
     "lib": ["dom", "dom.iterable", "es2022"],
     "allowJs": false,
@@ -23,7 +19,11 @@
         "name": "next"
       }
     ],
-    "types": ["node"]
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
   },
   "include": [
     "next-env.d.ts",
