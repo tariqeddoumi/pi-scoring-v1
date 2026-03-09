@@ -2,6 +2,9 @@
   "name": "pi-scoring-webapp",
   "version": "0.1.0",
   "private": true,
+  "description": "Promotion Immobilière Risk Scoring Web Application",
+  "author": "Tariq Eddoumi",
+  "license": "UNLICENSED",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
