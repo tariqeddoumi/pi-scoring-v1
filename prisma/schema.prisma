@@ -134,20 +134,14 @@ model Project {
 }
 
 model Evaluation {
-  id            String   @id @default(cuid())
-  projectId     String
-  modelVersionId String
-  dateScoring   DateTime @default(now())
-  status        String   @default("DRAFT") // DRAFT/SUBMITTED/APPROVED
-  // raw input data
-  inputs        Json
-  // computed output
-  results       Json?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String   @id @default(uuid())
+  projectId       String
+  modelVersionId  String
 
-  project       Project @relation(fields: [projectId], references: [id])
-  modelVersion  ModelVersion @relation(fields: [modelVersionId], references: [id])
+  project         Project      @relation(fields: [projectId], references: [id])
+  modelVersion    ModelVersion @relation(fields: [modelVersionId], references: [id])
 
-  @@index([projectId, dateScoring])
+  createdAt       DateTime @default(now())
+
+  @@map("pi_evaluations")
 }
