@@ -1,6 +1,16 @@
+import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 
 export async function GET() {
-  const evals = await prisma.evaluation.findMany({ orderBy: { dateScoring: "desc" }, take: 100 });
-  return Response.json(evals);
+  const evaluations = await prisma.evaluation.findMany({
+    include: {
+      project: true,
+      modelVersion: true,
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+
+  return NextResponse.json(evaluations);
 }
