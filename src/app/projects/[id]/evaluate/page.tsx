@@ -1,99 +1,119 @@
+import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/db/prisma";
-import { redirect } from "next/navigation";
+import { loadModelFromDb } from "@/lib/domain/loadModelFromDb";
+import { computeScoring } from "@/lib/domain/scoringEngine";
 
-export default async function NewEvalPage({ params }: { params: { id: string } }) {
-  const project = await prisma.project.findUnique({ where: { id: params.id } });
-  if (!project) return <div>Projet introuvable.</div>;
+type PageProps = {
+  params: Promise<{ id: string }>;
+};
 
-  const mv = await prisma.modelVersion.findFirst({ where: { isActive: true }, orderBy: { createdAt: "desc" } });
-  if (!mv) return <div>Aucun modèle actif.</div>;
+export default async function ProjectEvaluatePage({ params }: PageProps) {
+  const { id } = await params;
 
-  async function createEval(formData: FormData) {
+  const project = await prisma.project.findUnique({
+    where: { id },
+  });
+
+  if (!project) {
+    notFound();
+  }
+
+  async function submitEvaluation(formData: FormData) {
     "use server";
+
+    const projectId = formData.get("projectId")?.toString();
+    const modelCode = formData.get("modelCode")?.toString() || "PI_2026Q1";
+
+    if (!projectId) {
+      throw new Error("Project ID manquant.");
+    }
+
     const inputs = {
-      D1_FP_POS: formData.get("D1_FP_POS") === "on",
-      D1_GEARING: Number(formData.get("D1_GEARING") || 0),
-      D1_LIQ_GEN: Number(formData.get("D1_LIQ_GEN") || 0),
-
-      D3_PREV_SEC: Number(formData.get("D3_PREV_SEC") || 0),
-      D3_DSO: Number(formData.get("D3_DSO") || 0),
-      D3_ROT_STOCK: Number(formData.get("D3_ROT_STOCK") || 0),
-      D3_CASH_COV: Number(formData.get("D3_CASH_COV") || 0),
-
-      D4_MB: Number(formData.get("D4_MB") || 0),
-      D4_LTC: Number(formData.get("D4_LTC") || 0),
-      D4_GAR_COV: Number(formData.get("D4_GAR_COV") || 0),
-      D4_RANG_1: formData.get("D4_RANG_1") === "on",
-
-      // triggers D5
-      TRIG_RETARD_6M: formData.get("TRIG_RETARD_6M") === "on",
-      TRIG_CASH_LT_2T: formData.get("TRIG_CASH_LT_2T") === "on",
-      TRIG_IMPASSE_PERSIST: formData.get("TRIG_IMPASSE_PERSIST") === "on",
-      HARD_IMPAYE_90D: formData.get("HARD_IMPAYE_90D") === "on",
+      preCommercialisationPct: Number(formData.get("preCommercialisationPct") || 0),
+      workProgressPct: Number(formData.get("workProgressPct") || 0),
+      dscr: Number(formData.get("dscr") || 0),
+      segment: formData.get("segment")?.toString() || "",
+      zone: formData.get("zone")?.toString() || "",
+      d5Triggers: [],
     };
 
-    const evalRow = await prisma.evaluation.create({
+    const model = await loadModelFromDb(modelCode);
+    const scoring = computeScoring({
+      model,
+      inputs,
+    });
+
+    const evaluation = await prisma.evaluation.create({
       data: {
-        projectId: project.id,
-        modelVersionId: mv.id,
-        status: "DRAFT",
+        projectId,
+        modelCode,
+        status: "draft",
         inputs,
+        results: scoring,
+        finalScore: scoring.finalScore,
+        grade: scoring.grade,
       },
     });
 
-    // compute and store results via API-less server call
-    const { loadActiveModel } = await import("@/lib/domain/loadModelFromDb");
-    const { computePI } = await import("@/lib/domain/scoringEngine");
-    const model = await loadActiveModel();
-    const result = computePI(model, inputs, project.segmentCode, project.zoneCode);
-
-    await prisma.evaluation.update({
-      where: { id: evalRow.id },
-      data: { results: result as any },
-    });
-
-    redirect(`/evaluations/${evalRow.id}`);
+    redirect(`/evaluations/${evaluation.id}`);
   }
 
   return (
-    <div>
-      <h2>Nouvelle évaluation — {project.projectRef}</h2>
-      <p style={{ opacity: .8 }}>Segment={project.segmentCode} | Zone={project.zoneCode} | Promoteur={project.promoterType}</p>
+    <main className="p-6 max-w-2xl">
+      <h1 className="text-2xl font-bold mb-6">Nouvelle évaluation PI</h1>
 
-      <form action={createEval} style={{ display: "grid", gap: 12, maxWidth: 720 }}>
-        <fieldset style={{ border: "1px solid #eee", borderRadius: 8, padding: 12 }}>
-          <legend><b>D1 — Promoteur</b></legend>
-          <label><input type="checkbox" name="D1_FP_POS" defaultChecked /> Fonds propres positifs</label>
-          <label>Gearing (%) <input type="number" step="0.01" name="D1_GEARING" defaultValue={95} /></label>
-          <label>Liquidité générale (x) <input type="number" step="0.01" name="D1_LIQ_GEN" defaultValue={1.25} /></label>
-        </fieldset>
+      <div className="mb-6 border rounded p-4 space-y-2">
+        <p><strong>Projet :</strong> {project.name}</p>
+        <p><strong>Code projet :</strong> {project.projectCode ?? "-"}</p>
+        <p><strong>Ville :</strong> {project.city ?? "-"}</p>
+        <p><strong>Zone :</strong> {project.zone ?? "-"}</p>
+        <p><strong>Segment :</strong> {project.segment ?? "-"}</p>
+        <p><strong>Type :</strong> {project.type ?? "-"}</p>
+      </div>
 
-        <fieldset style={{ border: "1px solid #eee", borderRadius: 8, padding: 12 }}>
-          <legend><b>D3 — Commercial & Cash</b></legend>
-          <label>Préventes sécurisées (%) <input type="number" step="0.01" name="D3_PREV_SEC" defaultValue={42} /></label>
-          <label>DSO (jours) <input type="number" step="1" name="D3_DSO" defaultValue={110} /></label>
-          <label>Rotation stock (jours) <input type="number" step="1" name="D3_ROT_STOCK" defaultValue={500} /></label>
-          <label>Cash coverage (x) <input type="number" step="0.01" name="D3_CASH_COV" defaultValue={1.1} /></label>
-        </fieldset>
+      <form action={submitEvaluation} className="space-y-4">
+        <input type="hidden" name="projectId" value={project.id} />
+        <input type="hidden" name="modelCode" value="PI_2026Q1" />
+        <input type="hidden" name="segment" value={project.segment ?? ""} />
+        <input type="hidden" name="zone" value={project.zone ?? ""} />
 
-        <fieldset style={{ border: "1px solid #eee", borderRadius: 8, padding: 12 }}>
-          <legend><b>D4 — LGD & Structuration</b></legend>
-          <label>Marge brute (%) <input type="number" step="0.01" name="D4_MB" defaultValue={26} /></label>
-          <label>LTC (%) <input type="number" step="0.01" name="D4_LTC" defaultValue={58} /></label>
-          <label>Couverture garanties (%) <input type="number" step="0.01" name="D4_GAR_COV" defaultValue={125} /></label>
-          <label><input type="checkbox" name="D4_RANG_1" defaultChecked /> Garantie 1er rang</label>
-        </fieldset>
+        <div>
+          <label className="block mb-1 font-medium">Précommercialisation (%)</label>
+          <input
+            name="preCommercialisationPct"
+            type="number"
+            step="0.01"
+            className="w-full border rounded px-3 py-2"
+            defaultValue="0"
+          />
+        </div>
 
-        <fieldset style={{ border: "1px solid #eee", borderRadius: 8, padding: 12 }}>
-          <legend><b>D5 — Déclencheurs / signaux</b></legend>
-          <label><input type="checkbox" name="TRIG_RETARD_6M" /> Retard ≥6 mois</label>
-          <label><input type="checkbox" name="TRIG_CASH_LT_2T" /> Cash &lt; échéances 2 trimestres</label>
-          <label><input type="checkbox" name="TRIG_IMPASSE_PERSIST" /> Impasse persistante</label>
-          <label><input type="checkbox" name="HARD_IMPAYE_90D" /> Impayé ≥90 jours (Souffrance)</label>
-        </fieldset>
+        <div>
+          <label className="block mb-1 font-medium">Avancement travaux (%)</label>
+          <input
+            name="workProgressPct"
+            type="number"
+            step="0.01"
+            className="w-full border rounded px-3 py-2"
+            defaultValue="0"
+          />
+        </div>
 
-        <button type="submit">Calculer & enregistrer</button>
+        <div>
+          <label className="block mb-1 font-medium">DSCR</label>
+          <input
+            name="dscr"
+            type="number"
+            step="0.01"
+            className="w-full border rounded px-3 py-2"
+            defaultValue="0"
+          />
+        </div>
+
+        <button type="submit" className="rounded bg-green-600 px-4 py-2 text-white">
+          Calculer et enregistrer
+        </button>
       </form>
-    </div>
+    </main>
   );
 }
