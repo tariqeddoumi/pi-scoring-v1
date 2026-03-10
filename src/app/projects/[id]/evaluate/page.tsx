@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/db/prisma";
 import { loadModelFromDb } from "@/lib/domain/loadModelFromDb";
